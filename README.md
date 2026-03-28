@@ -45,9 +45,7 @@ npm test
 
 ## Fork & Deploy Your Own Token
 
-### 1. Fork the repo
-
-Click **Fork** on GitHub, then clone your fork:
+### 1. Fork & clone
 
 ```bash
 git clone https://github.com/<YOUR_USERNAME>/sui-vanity-token-generator.git
@@ -55,45 +53,9 @@ cd sui-vanity-token-generator
 npm install
 ```
 
-### 2. Choose your vanity suffix
+### 2. Install the Sui CLI
 
-Open `src/deploy.ts` and change the suffix (must be valid lowercase hex: `0-9a-f`):
-
-```ts
-const VANITY_SUFFIX = "b00b";  // ← change this to your suffix
-```
-
-Some fun examples: `"dead"`, `"beef"`, `"cafe"`, `"babe"`, `"face"`, `"c0de"`, `"f00d"`, `"0000"`, `"1337"`.
-
-### 3. Customize your token
-
-Edit `token/sources/vanity.move`:
-
-```move
-const DECIMALS: u8 = 9;
-const TOTAL_SUPPLY: u64 = 1_000_000_000_000_000_000; // 1B * 10^9
-
-// Change these values:
-b"VANITY",                                              // ticker
-b"Vanity",                                              // name
-b"Vanity token deployed via Sui Vanity Token Generator", // description
-```
-
-If you change the module name, also update the `module` declaration at the top and the OTW struct name (must match the module name in UPPERCASE).
-
-### 4. Build the Move package
-
-Install the [Sui CLI](https://docs.sui.io/guides/developer/getting-started/sui-install) then:
-
-```bash
-cd token
-sui move build
-cd ..
-```
-
-This produces the compiled bytecode at `token/build/vanity_token/bytecode_modules/vanity.mv`.
-
-### 5. Set up a deployer wallet
+Follow the [Sui CLI install guide](https://docs.sui.io/guides/developer/getting-started/sui-install), then set up a wallet:
 
 ```bash
 sui client new-address ed25519
@@ -102,33 +64,54 @@ sui client switch --address <NEW_ADDRESS>
 
 Send SUI to the new address for gas (~1 SUI is enough).
 
-### 6. Choose your network
-
-In `src/deploy.ts`, set the RPC URL:
-
-```ts
-// Mainnet
-const RPC_URL = "https://fullnode.mainnet.sui.io:443";
-
-// Testnet
-// const RPC_URL = "https://fullnode.testnet.sui.io:443";
-```
-
-### 7. Deploy
+### 3. Deploy — one command
 
 ```bash
-# Dry run first (grinds but doesn't submit)
-npx tsx src/deploy.ts --dry
+# Deploy $FOILED with package ID ending in b00b
+npx tsx src/deploy.ts FOILED --suffix b00b
 
-# Deploy for real
-npx tsx src/deploy.ts
+# Deploy $PEPE with package ID ending in dead
+npx tsx src/deploy.ts PEPE --suffix dead
+
+# Deploy $VANITY with the default suffix (b00b)
+npx tsx src/deploy.ts VANITY
+
+# Dry run first (grinds but doesn't submit)
+npx tsx src/deploy.ts FOILED --suffix b00b --dry
+
+# Deploy to testnet
+npx tsx src/deploy.ts FOILED --suffix b00b --testnet
 ```
 
-The script will:
-1. Load your keypair from `~/.sui/sui_config/sui.keystore`
-2. Grind gas budgets until the package ID ends with your suffix
-3. Sign the raw BCS bytes (no SDK re-serialization)
-4. Submit to the network and confirm the vanity suffix
+The script automatically:
+1. Generates the Move source for your token name
+2. Compiles it with `sui move build`
+3. Grinds gas budgets until the package ID ends with your suffix
+4. Signs the raw BCS bytes and submits to the network
+
+**Output:**
+```
+[deploy] PUBLISHED: 0x369271d57e998391ff48f6928c36c772024023889b565af060778786507eb00b
+[deploy] coin type: 0x...b00b::foiled::FOILED
+[deploy] VANITY SUFFIX CONFIRMED: ...b00b
+```
+
+### All Options
+
+```
+Usage: npx tsx src/deploy.ts <TOKEN_NAME> [options]
+
+  TOKEN_NAME          Token ticker (e.g. VANITY, FOILED, PEPE)
+
+  --suffix <hex>      Vanity hex suffix (default: b00b)
+  --supply <number>   Total supply before decimals (default: 1000000000)
+  --decimals <number> Token decimals (default: 9)
+  --desc <text>       Token description
+  --dry               Grind only, don't publish
+  --testnet           Deploy to testnet instead of mainnet
+```
+
+Fun suffix ideas: `"dead"`, `"beef"`, `"cafe"`, `"babe"`, `"face"`, `"c0de"`, `"f00d"`, `"0000"`, `"1337"`.
 
 ---
 
@@ -137,7 +120,7 @@ The script will:
 ```
 src/
   grinder.ts      Core vanity grinder — pure hashing, no RPC calls
-  deploy.ts       Deploy script — grinds + publishes to mainnet/testnet
+  deploy.ts       CLI deploy — generates Move, builds, grinds, publishes
   constants.ts    Configurable defaults (suffix, gas floor, epoch buffer)
   launch.ts       Full launch flow with SuiClient integration
   registry.ts     On-chain registry reads + registration
