@@ -1,0 +1,5 @@
+[package]
+name = "vanity_token"
+edition = "2024"
+
+[dependencies]

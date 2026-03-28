@@ -24,12 +24,13 @@ describe("u64LE", () => {
 describe("computePackageId", () => {
   it("produces expected hex for a known tx_digest", () => {
     // Deterministic test: use a fixed 32-byte digest, compute expected
-    // package_id via the same algorithm inline.
+    // package_id via the same algorithm inline (with 0xf1 scope byte).
     const txDigest = blake2b(new Uint8Array([1, 2, 3, 4]), { dkLen: 32 });
 
-    // Expected: blake2b( txDigest || u64_le(0) )
-    const input = new Uint8Array(32 + 8);
-    input.set(txDigest, 0);
+    // Expected: blake2b( 0xf1 || txDigest || u64_le(0) )
+    const input = new Uint8Array(1 + 32 + 8);
+    input[0] = 0xf1;
+    input.set(txDigest, 1);
     // creation_index 0 → 8 zero bytes (already zeroed)
     const expectedHash = blake2b(input, { dkLen: 32 });
     const expectedHex = `0x${bytesToHex(expectedHash)}`;

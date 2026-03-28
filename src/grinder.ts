@@ -80,40 +80,67 @@ function findBytes(haystack: Uint8Array, needle: Uint8Array): number {
 }
 
 /**
+ * Sui's HashingIntentScope::RegularObjectId prefix byte.
+ * Prepended before the tx digest when deriving fresh object IDs.
+ */
+const OBJECT_ID_SCOPE = new Uint8Array([0xf1]);
+
+/**
  * Compute a Sui object ID from a transaction digest and creation index.
  *
- *   object_id = blake2b-256( tx_digest || u64_le(creation_index) )
+ *   object_id = blake2b-256( 0xf1 || tx_digest || u64_le(creation_index) )
  */
 export function computePackageId(
   txDigest: Uint8Array,
   creationIndex: number,
 ): string {
-  const input = concat(txDigest, u64LE(creationIndex));
+  const input = concat(OBJECT_ID_SCOPE, txDigest, u64LE(creationIndex));
   const hash = blake2b(input, { dkLen: 32 });
   return `0x${bytesToHex(hash)}`;
 }
 
 /**
  * Build the BCS-serialized TransactionData for a Publish transaction.
- * Matches Sui's exact wire format: TransactionData::V1 with a single
- * ProgrammableTransaction containing one Publish command.
+ * Matches Sui's exact wire format: TransactionData::V1 with a
+ * ProgrammableTransaction containing Publish + TransferObjects (for UpgradeCap).
+ *
+ * Exported so the deploy script can build the identical bytes for signing.
  */
-function serializePublishTxData(
+export function serializePublishTxData(
   params: GrindParams,
   gasBudget: bigint,
 ): Uint8Array {
   const modules = params.compiledModules.map((m) => fromBase64(m));
 
+  // The sender address as a Pure input (raw 32 bytes, no length prefix)
+  const senderHex = params.sender.replace(/^0x/, "");
+  const senderBytes = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) {
+    senderBytes[i] = parseInt(senderHex.slice(i * 2, i * 2 + 2), 16);
+  }
+
   const txDataValue = {
     V1: {
       kind: {
         ProgrammableTransaction: {
-          inputs: [] as never[],
+          inputs: [
+            {
+              Pure: {
+                bytes: senderBytes,
+              },
+            },
+          ],
           commands: [
             {
               Publish: {
                 modules,
                 dependencies: params.dependencies,
+              },
+            },
+            {
+              TransferObjects: {
+                objects: [{ Result: 0 }],
+                address: { Input: 0 },
               },
             },
           ],
@@ -149,10 +176,8 @@ function serializePublishTxData(
  * each iteration before re-hashing.
  *
  * Algorithm:
- *   tx_digest  = blake2b-256( intent_prefix || bcs(TransactionData) )
- *   package_id = blake2b-256( tx_digest || u64_le(creation_index) )
- *
- * intent_prefix = [0x00, 0x00, 0x00]  (TransactionData scope, V0, Sui)
+ *   tx_digest  = blake2b-256( "TransactionData::" || bcs(TransactionData) )
+ *   package_id = blake2b-256( 0xf1 || tx_digest || u64_le(creation_index) )
  */
 export function grindPackageId(params: GrindParams): GrindResult {
   validateGrindTarget(params.target);
@@ -161,14 +186,16 @@ export function grindPackageId(params: GrindParams): GrindResult {
   const MARKER_BUDGET = 0xdeadbeefdeadbeefn;
   const bcsBytes = serializePublishTxData(params, MARKER_BUDGET);
 
-  // Build the intent message: [scope=0, version=0, appId=0] || bcs_bytes
-  const intentBytes = new Uint8Array(3 + bcsBytes.length);
-  // intentBytes[0..2] are already 0 (TransactionData, V0, Sui)
-  intentBytes.set(bcsBytes, 3);
+  // Build the tagged message: "TransactionData::" || bcs_bytes
+  // Sui computes TransactionDigest as blake2b("TransactionData::" || bcs_data)
+  const TAG = new TextEncoder().encode("TransactionData::");
+  const taggedBytes = new Uint8Array(TAG.length + bcsBytes.length);
+  taggedBytes.set(TAG);
+  taggedBytes.set(bcsBytes, TAG.length);
 
-  // Locate the 8-byte marker inside the intent message so we can patch in-place.
+  // Locate the 8-byte marker inside the tagged message so we can patch in-place.
   const markerBytes = bigintToU64LE(MARKER_BUDGET);
-  const budgetOffset = findBytes(intentBytes, markerBytes);
+  const budgetOffset = findBytes(taggedBytes, markerBytes);
   if (budgetOffset === -1) {
     throw new Error(
       "Failed to locate gasBudget marker in serialized TransactionData",
@@ -184,16 +211,17 @@ export function grindPackageId(params: GrindParams): GrindResult {
   const start = performance.now();
 
   while (true) {
-    // Patch the budget bytes directly in the pre-built intent message.
-    intentBytes.set(bigintToU64LE(budget), budgetOffset);
+    // Patch the budget bytes directly in the pre-built tagged message.
+    taggedBytes.set(bigintToU64LE(budget), budgetOffset);
 
-    // tx_digest = blake2b-256( intent_message )
-    const txDigest = blake2b(intentBytes, { dkLen: 32 });
+    // tx_digest = blake2b-256( "TransactionData::" || bcs_data )
+    const txDigest = blake2b(taggedBytes, { dkLen: 32 });
 
-    // package_id = blake2b-256( tx_digest || u64_le(creation_index) )
-    const packageIdBytes = blake2b(concat(txDigest, creationSuffix), {
-      dkLen: 32,
-    });
+    // package_id = blake2b-256( 0xf1 || tx_digest || u64_le(creation_index) )
+    const packageIdBytes = blake2b(
+      concat(OBJECT_ID_SCOPE, txDigest, creationSuffix),
+      { dkLen: 32 },
+    );
     const hex = bytesToHex(packageIdBytes);
 
     iterations++;
