@@ -1,0 +1,1 @@
+# sui-vanity-token-generator
