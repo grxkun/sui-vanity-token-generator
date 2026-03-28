@@ -43,17 +43,9 @@ npm test
 
 ---
 
-## Fork & Deploy Your Own Token
+## Deploy Your Own Token
 
-### 1. Fork & clone
-
-```bash
-git clone https://github.com/<YOUR_USERNAME>/sui-vanity-token-generator.git
-cd sui-vanity-token-generator
-npm install
-```
-
-### 2. Install the Sui CLI
+### 1. Install the Sui CLI
 
 Follow the [Sui CLI install guide](https://docs.sui.io/guides/developer/getting-started/sui-install), then set up a wallet:
 
@@ -64,7 +56,7 @@ sui client switch --address <NEW_ADDRESS>
 
 Send SUI to the new address for gas (~1 SUI is enough).
 
-### 3. Deploy — one command
+### 2. Deploy — one command
 
 ```bash
 # Deploy $FOILED with package ID ending in b00b
@@ -96,7 +88,7 @@ The script automatically:
 [deploy] VANITY SUFFIX CONFIRMED: ...b00b
 ```
 
-### All Options
+### 3. All Options
 
 ```
 Usage: npx tsx src/deploy.ts <TOKEN_NAME> [options]
